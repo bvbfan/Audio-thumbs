@@ -1,5 +1,5 @@
 # Audio-thumbs
-Preview of embed album art in audio file in Dolphin
+Preview of embed album art in audio file for Dolphin 5
 
 ## Requirements
 * Plasma 5
@@ -27,3 +27,6 @@ cmake .. \
 make
 sudo make install
 Configure Dolphin - General - Preview - Audio files
+
+
+Special thanks to Vytautas Mickus who made Dolphin 4 version.
