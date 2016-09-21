@@ -5,12 +5,16 @@ Preview of embed album art in audio file for Dolphin 5
 * Plasma 5
 * Qt 5.3+
 * TagLib
-* FLAC++
 * Extra CMake Modules (only for building)
 
 ### More Specifically for Ubuntu 16.04 Xenial
 ```
-sudo apt-get install g++ cmake extra-cmake-modules qtbase5-dev kio-dev libflac++-dev libtag1-dev
+sudo apt-get install g++ cmake extra-cmake-modules qtbase5-dev kio-dev libtag1-dev
+```
+
+### More Specifically for OpenSuse
+```
+sudo zypper install extra-cmake-modules libQt5Core-devel kio-devel libtag-devel
 ```
 
 ## Compile and install

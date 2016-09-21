@@ -43,25 +43,4 @@ else(TAGLIB_FOUND)
     message(FATAL_ERROR "Could not find Taglib")
 endif(TAGLIB_FOUND)
 
-find_path(FLAC++_INCLUDES
-            NAMES metadata.h
-            PATH_SUFFIXES FLAC++
-            PATHS
-            ${INCLUDE_INSTALL_DIR}
-)
-
-find_library(FLAC++_LIBRARIES
-                NAMES FLAC++
-                PATHS
-                ${LIB_INSTALL_DIR}
-)
-
-find_package_handle_standard_args(FLAC++ DEFAULT_MSG FLAC++_INCLUDES FLAC++_LIBRARIES)
-
-if(FLAC++_FOUND)
-    message(STATUS "Found FLAC++: ${FLAC++_LIBRARIES}")
-else(FLAC++_FOUND)
-    message(FATAL_ERROR "Could not find FLAC++")
-endif(FLAC++_FOUND)
-
 add_subdirectory(src)

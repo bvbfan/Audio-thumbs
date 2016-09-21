@@ -27,14 +27,14 @@
 #include <QMimeDatabase>
 #include <QScopedPointer>
 
+#include <taglib/mp4tag.h>
+#include <taglib/mp4file.h>
 #include <taglib/fileref.h>
 #include <taglib/id3v2tag.h>
 #include <taglib/mpegfile.h>
+#include <taglib/flacfile.h>
+#include <taglib/flacpicture.h>
 #include <taglib/attachedpictureframe.h>
-
-#include <FLAC++/metadata.h>
-
-#define QCM_duplicate(t, d, s) t = QByteArray(d, s)
 
 extern "C"
 {
@@ -61,56 +61,52 @@ bool ATCreator::create(const QString &path, int, int, QImage &img)
     }
 
     if (type.inherits("audio/mpeg")) {
-        QByteArray fn = QFile::encodeName(path);
-        TagLib::FileRef fileRef = TagLib::FileRef(fn);
+        TagLib::FileRef fileRef(QFile::encodeName(path));
         if (fileRef.isNull()) {
             return false;
         }
-
         auto file = dynamic_cast<TagLib::MPEG::File*>(fileRef.file());
         if (!file || !file->ID3v2Tag()) {
             return false;
         }
-
-        const auto flm = file->ID3v2Tag()->frameListMap();
+        auto flm = file->ID3v2Tag()->frameListMap();
         if (flm["APIC"].isEmpty()) {
             return false;
         }
-
-        const auto apicFrame = dynamic_cast<TagLib::ID3v2::AttachedPictureFrame*>(flm["APIC"].front());
+        auto apicFrame = dynamic_cast<TagLib::ID3v2::AttachedPictureFrame*>(flm["APIC"].front());
         if (!apicFrame) {
             return false;
         }
-
-        img.loadFromData((unsigned char *)apicFrame->picture().data(), apicFrame->picture().size());
+        img.loadFromData((const uchar *)apicFrame->picture().data(), apicFrame->picture().size());
         return true;
     }
-    if (type.inherits("audio/x-flac")) {
-        QByteArray fn = QFile::encodeName(path);
-        FLAC::Metadata::Chain m_chain;
-        if (!m_chain.read(fn)) {
+    if (type.inherits("audio/x-flac") || type.inherits("audio/flac")) {
+        TagLib::FLAC::File file(QFile::encodeName(path));
+        if (file.pictureList().isEmpty()) {
             return false;
         }
-
-        FLAC::Metadata::Iterator mdit;
-        mdit.init(m_chain);
-        while (mdit.is_valid()) {
-            auto mdt = mdit.get_block_type();
-            if (mdt == FLAC__METADATA_TYPE_PICTURE) {
-                QScopedPointer<FLAC::Metadata::Prototype> proto(mdit.get_block());
-                if (proto) {
-                    auto pic = dynamic_cast<FLAC::Metadata::Picture*>(proto.data());
-                    if (pic) {
-                        QByteArray ba;
-                        QCM_duplicate(ba, reinterpret_cast<const char*>(pic->get_data()), pic->get_data_length());
-                        img.loadFromData(ba);
-                        return true;
-                    }
-                }
-                if (!mdit.next()) {
-                    break;
-                }
+        QByteArray data;
+        auto coverData = file.pictureList().front()->data();
+        data.setRawData(coverData.data(), coverData.size());
+        img.loadFromData(data);
+        return true;
+    }
+    if (type.inherits("audio/mp4")) {
+        TagLib::MP4::File mp4file(QFile::encodeName(path));
+        auto map = mp4file.tag()->itemListMap();
+        if (map.isEmpty()) {
+            return false;
+        }
+        for (auto &coverList : map) {
+            auto coverArtList = coverList.second.toCoverArtList();
+            if (coverArtList.isEmpty()) {
+                continue;
             }
+            QByteArray data;
+            auto coverData = coverArtList[0].data();
+            data.setRawData(coverData.data(), coverData.size());
+            img.loadFromData(data);
+            return true;
         }
     }
     return false;
