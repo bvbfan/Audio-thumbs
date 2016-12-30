@@ -25,18 +25,13 @@
 #include <QImage>
 #include <QMimeType>
 #include <QMimeDatabase>
-#include <QScopedPointer>
 
 #include <taglib/fileref.h>
 #include <taglib/apetag.h>
 #include <taglib/mp4tag.h>
 #include <taglib/id3v2tag.h>
 #include <taglib/mp4file.h>
-#include <taglib/oggfile.h>
-#include <taglib/apefile.h>
-#include <taglib/mpegfile.h>
 #include <taglib/flacfile.h>
-#include <taglib/wavpackfile.h>
 #include <taglib/xiphcomment.h>
 #include <taglib/flacpicture.h>
 #include <taglib/attachedpictureframe.h>
@@ -65,20 +60,21 @@ bool ATCreator::create(const QString &path, int, int, QImage &img)
         return false;
     }
 
-    if (type.inherits("audio/mpeg")) {
+    if (type.inherits("audio/mpeg") || type.inherits("audio/x-ms-wma")
+    ||  type.inherits("audio/x-aiff") || type.inherits("audio/x-wav")) {
         TagLib::FileRef fileRef(QFile::encodeName(path));
         if (fileRef.isNull()) {
             return false;
         }
-        auto file = dynamic_cast<TagLib::MPEG::File*>(fileRef.file());
-        if (!file || !file->ID3v2Tag()) {
+        auto id3v2Tag = dynamic_cast<TagLib::ID3v2::Tag*>(fileRef.tag());
+        if (!id3v2Tag || id3v2Tag->isEmpty()) {
             return false;
         }
-        auto flm = file->ID3v2Tag()->frameListMap();
-        if (flm["APIC"].isEmpty()) {
+        const auto &map = id3v2Tag->frameListMap();
+        if (map["APIC"].isEmpty()) {
             return false;
         }
-        auto apicFrame = dynamic_cast<TagLib::ID3v2::AttachedPictureFrame*>(flm["APIC"].front());
+        auto apicFrame = dynamic_cast<TagLib::ID3v2::AttachedPictureFrame*>(map["APIC"].front());
         if (!apicFrame) {
             return false;
         }
@@ -99,7 +95,7 @@ bool ATCreator::create(const QString &path, int, int, QImage &img)
             return true;
         }
     }
-    if (type.inherits("audio/mp4")) {
+    if (type.inherits("audio/mp4") || type.inherits("audio/x-m4a")) {
         TagLib::MP4::File file(QFile::encodeName(path));
         const auto &map = file.tag()->itemMap();
         for (const auto &coverList : map) {
@@ -114,24 +110,17 @@ bool ATCreator::create(const QString &path, int, int, QImage &img)
             return true;
         }
     }
-    if (type.inherits("audio/x-monkeys-audio") || type.inherits("audio/x-vw")) {
+    if (type.inherits("audio/x-ape") || type.inherits("audio/x-wavpack")
+    ||  type.inherits("audio/x-musepack") || type.inherits("audio/x-vw")) {
         TagLib::FileRef fileRef(QFile::encodeName(path));
         if (fileRef.isNull()) {
             return false;
         }
-        auto apeFile = dynamic_cast<TagLib::APE::File*>(fileRef.file());
-        if (apeFile && !apeFile->hasAPETag()) {
+        auto apeTag = dynamic_cast<TagLib::APE::Tag*>(fileRef.tag());
+        if (!apeTag || apeTag->isEmpty()) {
             return false;
         }
-        auto wavFile = dynamic_cast<TagLib::WavPack::File*>(fileRef.file());
-        if (wavFile && !wavFile->hasAPETag()) {
-            return false;
-        }
-        if (!apeFile && !wavFile) {
-            return false;
-        }
-        const auto &map = apeFile ? apeFile->APETag()->itemListMap() :
-                                    wavFile->APETag()->itemListMap();
+        const auto &map = apeTag->itemListMap();
         for (const auto &item : map) {
             if (item.second.type() != TagLib::APE::Item::Binary) {
                 continue;
@@ -143,17 +132,13 @@ bool ATCreator::create(const QString &path, int, int, QImage &img)
             return true;
         }
     }
-    if (type.inherits("audio/ogg")) {
+    if (type.inherits("audio/ogg") || type.inherits("audio/vorbis")) {
         TagLib::FileRef fileRef(QFile::encodeName(path));
         if (fileRef.isNull()) {
             return false;
         }
-        auto file = dynamic_cast<TagLib::Ogg::File*>(fileRef.file());
-        if (!file) {
-            return false;
-        }
-        auto xiphComment = dynamic_cast<TagLib::Ogg::XiphComment*>(file->tag());
-        if (!xiphComment) {
+        auto xiphComment = dynamic_cast<TagLib::Ogg::XiphComment*>(fileRef.tag());
+        if (!xiphComment || xiphComment->isEmpty()) {
             return false;
         }
         const auto pictureList = xiphComment->pictureList();
