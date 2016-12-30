@@ -27,12 +27,17 @@
 #include <QMimeDatabase>
 #include <QScopedPointer>
 
-#include <taglib/mp4tag.h>
-#include <taglib/mp4file.h>
 #include <taglib/fileref.h>
+#include <taglib/apetag.h>
+#include <taglib/mp4tag.h>
 #include <taglib/id3v2tag.h>
+#include <taglib/mp4file.h>
+#include <taglib/oggfile.h>
+#include <taglib/apefile.h>
 #include <taglib/mpegfile.h>
 #include <taglib/flacfile.h>
+#include <taglib/wavpackfile.h>
+#include <taglib/xiphcomment.h>
 #include <taglib/flacpicture.h>
 #include <taglib/attachedpictureframe.h>
 
@@ -82,28 +87,82 @@ bool ATCreator::create(const QString &path, int, int, QImage &img)
     }
     if (type.inherits("audio/x-flac") || type.inherits("audio/flac")) {
         TagLib::FLAC::File file(QFile::encodeName(path));
-        if (file.pictureList().isEmpty()) {
-            return false;
+        const auto pictureList = file.pictureList();
+        for (const auto &picture : pictureList) {
+            if (picture->type() != TagLib::FLAC::Picture::FrontCover) {
+                continue;
+            }
+            QByteArray data;
+            const auto coverData = picture->data();
+            data.setRawData(coverData.data(), coverData.size());
+            img.loadFromData(data);
+            return true;
         }
-        QByteArray data;
-        auto coverData = file.pictureList().front()->data();
-        data.setRawData(coverData.data(), coverData.size());
-        img.loadFromData(data);
-        return true;
     }
     if (type.inherits("audio/mp4")) {
-        TagLib::MP4::File mp4file(QFile::encodeName(path));
-        auto map = mp4file.tag()->itemListMap();
-        if (map.isEmpty()) {
-            return false;
-        }
-        for (auto &coverList : map) {
+        TagLib::MP4::File file(QFile::encodeName(path));
+        const auto &map = file.tag()->itemMap();
+        for (const auto &coverList : map) {
             auto coverArtList = coverList.second.toCoverArtList();
             if (coverArtList.isEmpty()) {
                 continue;
             }
             QByteArray data;
-            auto coverData = coverArtList[0].data();
+            const auto coverData = coverArtList[0].data();
+            data.setRawData(coverData.data(), coverData.size());
+            img.loadFromData(data);
+            return true;
+        }
+    }
+    if (type.inherits("audio/x-monkeys-audio") || type.inherits("audio/x-vw")) {
+        TagLib::FileRef fileRef(QFile::encodeName(path));
+        if (fileRef.isNull()) {
+            return false;
+        }
+        auto apeFile = dynamic_cast<TagLib::APE::File*>(fileRef.file());
+        if (apeFile && !apeFile->hasAPETag()) {
+            return false;
+        }
+        auto wavFile = dynamic_cast<TagLib::WavPack::File*>(fileRef.file());
+        if (wavFile && !wavFile->hasAPETag()) {
+            return false;
+        }
+        if (!apeFile && !wavFile) {
+            return false;
+        }
+        const auto &map = apeFile ? apeFile->APETag()->itemListMap() :
+                                    wavFile->APETag()->itemListMap();
+        for (const auto &item : map) {
+            if (item.second.type() != TagLib::APE::Item::Binary) {
+                continue;
+            }
+            QByteArray data;
+            auto coverData = item.second.binaryData();
+            data.setRawData(coverData.data(), coverData.size());
+            img.loadFromData(data);
+            return true;
+        }
+    }
+    if (type.inherits("audio/ogg")) {
+        TagLib::FileRef fileRef(QFile::encodeName(path));
+        if (fileRef.isNull()) {
+            return false;
+        }
+        auto file = dynamic_cast<TagLib::Ogg::File*>(fileRef.file());
+        if (!file) {
+            return false;
+        }
+        auto xiphComment = dynamic_cast<TagLib::Ogg::XiphComment*>(file->tag());
+        if (!xiphComment) {
+            return false;
+        }
+        const auto pictureList = xiphComment->pictureList();
+        for (const auto &picture : pictureList) {
+            if (picture->type() != TagLib::FLAC::Picture::FrontCover) {
+                continue;
+            }
+            QByteArray data;
+            const auto coverData = picture->data();
             data.setRawData(coverData.data(), coverData.size());
             img.loadFromData(data);
             return true;
