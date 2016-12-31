@@ -26,12 +26,18 @@
 #include <QMimeType>
 #include <QMimeDatabase>
 
-#include <taglib/fileref.h>
 #include <taglib/apetag.h>
 #include <taglib/mp4tag.h>
 #include <taglib/id3v2tag.h>
+#include <taglib/fileref.h>
 #include <taglib/mp4file.h>
+#include <taglib/wavfile.h>
+#include <taglib/apefile.h>
+#include <taglib/mpcfile.h>
+#include <taglib/mpegfile.h>
+#include <taglib/aifffile.h>
 #include <taglib/flacfile.h>
+#include <taglib/wavpackfile.h>
 #include <taglib/xiphcomment.h>
 #include <taglib/flacpicture.h>
 #include <taglib/attachedpictureframe.h>
@@ -52,6 +58,105 @@ ATCreator::~ATCreator()
 {
 }
 
+namespace TagLib {
+    namespace RIFF {
+        namespace AIFF {
+            struct FileExt : public File {
+                using File::File;
+                ID3v2::Tag* ID3v2Tag() const {
+                    return tag();
+                }
+            };
+        }
+    }
+}
+
+template<class T> static
+bool parseID3v2Tag(T &file, QImage &img)
+{
+    if (!file.hasID3v2Tag()) {
+        return false;
+    }
+    const auto &map = file.ID3v2Tag()->frameListMap();
+    if (map["APIC"].isEmpty()) {
+        return false;
+    }
+    auto apicFrame = dynamic_cast<TagLib::ID3v2::AttachedPictureFrame*>(map["APIC"].front());
+    if (!apicFrame) {
+        return false;
+    }
+    const auto coverData = apicFrame->picture();
+    QByteArray data(coverData.data(), coverData.size());
+    img.loadFromData(data);
+    return true;
+}
+
+template<class T> static
+bool parseFlacTag(T &file, QImage &img) {
+    const auto pictureList = file.pictureList();
+    for (const auto &picture : pictureList) {
+        if (picture->type() != TagLib::FLAC::Picture::FrontCover) {
+            continue;
+        }
+        const auto coverData = picture->data();
+        QByteArray data(coverData.data(), coverData.size());
+        img.loadFromData(data);
+        return true;
+    }
+    return false;
+}
+
+template<class T> static
+bool parseMP4Tag(T &file, QImage &img)
+{
+    if (!file.hasMP4Tag()) {
+        return false;
+    }
+    const auto &map = file.tag()->itemMap();
+    for (const auto &coverList : map) {
+        auto coverArtList = coverList.second.toCoverArtList();
+        if (coverArtList.isEmpty()) {
+            continue;
+        }
+        const auto coverData = coverArtList[0].data();
+        QByteArray data(coverData.data(), coverData.size());
+        img.loadFromData(data);
+        return true;
+    }
+    return false;
+}
+
+template<class T> static
+bool parseAPETag(T &file, QImage &img)
+{
+    if (!file.hasAPETag()) {
+        return false;
+    }
+    const auto &map = file.APETag()->itemListMap();
+    for (const auto &item : map) {
+        if (item.second.type() != TagLib::APE::Item::Binary) {
+            continue;
+        }
+        const auto coverData = item.second.binaryData();
+        const auto data = coverData.data();
+        const auto size = coverData.size();
+        const char *start = nullptr;
+        for (size_t i=0; i<size; i++) {
+            if (data[i] == '\0' && (i+1) < size) {
+                start = data+i+1;
+                break;
+            }
+        }
+        if (!start) {
+            return false;
+        }
+        QByteArray cdata(start, coverData.size()-(start-data));
+        img.loadFromData(cdata);
+        return true;
+    }
+    return false;
+}
+
 bool ATCreator::create(const QString &path, int, int, QImage &img)
 {
     QMimeDatabase db;
@@ -60,77 +165,29 @@ bool ATCreator::create(const QString &path, int, int, QImage &img)
         return false;
     }
 
-    if (type.inherits("audio/mpeg") || type.inherits("audio/x-ms-wma")
-    ||  type.inherits("audio/x-aiff") || type.inherits("audio/x-wav")) {
-        TagLib::FileRef fileRef(QFile::encodeName(path));
-        if (fileRef.isNull()) {
-            return false;
-        }
-        auto id3v2Tag = dynamic_cast<TagLib::ID3v2::Tag*>(fileRef.tag());
-        if (!id3v2Tag || id3v2Tag->isEmpty()) {
-            return false;
-        }
-        const auto &map = id3v2Tag->frameListMap();
-        if (map["APIC"].isEmpty()) {
-            return false;
-        }
-        auto apicFrame = dynamic_cast<TagLib::ID3v2::AttachedPictureFrame*>(map["APIC"].front());
-        if (!apicFrame) {
-            return false;
-        }
-        img.loadFromData((const uchar *)apicFrame->picture().data(), apicFrame->picture().size());
-        return true;
+    if (type.inherits("audio/mpeg")) {
+        TagLib::MPEG::File file(QFile::encodeName(path));
+        return parseID3v2Tag(file, img) || parseAPETag(file, img);
     }
     if (type.inherits("audio/x-flac") || type.inherits("audio/flac")) {
         TagLib::FLAC::File file(QFile::encodeName(path));
-        const auto pictureList = file.pictureList();
-        for (const auto &picture : pictureList) {
-            if (picture->type() != TagLib::FLAC::Picture::FrontCover) {
-                continue;
-            }
-            QByteArray data;
-            const auto coverData = picture->data();
-            data.setRawData(coverData.data(), coverData.size());
-            img.loadFromData(data);
-            return true;
-        }
+        return parseFlacTag(file, img) || parseID3v2Tag(file, img);
     }
     if (type.inherits("audio/mp4") || type.inherits("audio/x-m4a")) {
         TagLib::MP4::File file(QFile::encodeName(path));
-        const auto &map = file.tag()->itemMap();
-        for (const auto &coverList : map) {
-            auto coverArtList = coverList.second.toCoverArtList();
-            if (coverArtList.isEmpty()) {
-                continue;
-            }
-            QByteArray data;
-            const auto coverData = coverArtList[0].data();
-            data.setRawData(coverData.data(), coverData.size());
-            img.loadFromData(data);
-            return true;
-        }
+        return parseMP4Tag(file, img);
     }
-    if (type.inherits("audio/x-ape") || type.inherits("audio/x-wavpack")
-    ||  type.inherits("audio/x-musepack") || type.inherits("audio/x-vw")) {
-        TagLib::FileRef fileRef(QFile::encodeName(path));
-        if (fileRef.isNull()) {
-            return false;
-        }
-        auto apeTag = dynamic_cast<TagLib::APE::Tag*>(fileRef.tag());
-        if (!apeTag || apeTag->isEmpty()) {
-            return false;
-        }
-        const auto &map = apeTag->itemListMap();
-        for (const auto &item : map) {
-            if (item.second.type() != TagLib::APE::Item::Binary) {
-                continue;
-            }
-            QByteArray data;
-            auto coverData = item.second.binaryData();
-            data.setRawData(coverData.data(), coverData.size());
-            img.loadFromData(data);
-            return true;
-        }
+    if (type.inherits("audio/x-ape")) {
+        TagLib::APE::File file(QFile::encodeName(path));
+        return parseAPETag(file, img);
+    }
+    if (type.inherits("audio/x-wavpack") || type.inherits("audio/x-vw")) {
+        TagLib::WavPack::File file(QFile::encodeName(path));
+        return parseAPETag(file, img);
+    }
+    if (type.inherits("audio/x-musepack")) {
+        TagLib::MPC::File file(QFile::encodeName(path));
+        return parseAPETag(file, img);
     }
     if (type.inherits("audio/ogg") || type.inherits("audio/vorbis")) {
         TagLib::FileRef fileRef(QFile::encodeName(path));
@@ -141,17 +198,15 @@ bool ATCreator::create(const QString &path, int, int, QImage &img)
         if (!xiphComment || xiphComment->isEmpty()) {
             return false;
         }
-        const auto pictureList = xiphComment->pictureList();
-        for (const auto &picture : pictureList) {
-            if (picture->type() != TagLib::FLAC::Picture::FrontCover) {
-                continue;
-            }
-            QByteArray data;
-            const auto coverData = picture->data();
-            data.setRawData(coverData.data(), coverData.size());
-            img.loadFromData(data);
-            return true;
-        }
+        return parseFlacTag(*xiphComment, img);
+    }
+    if (type.inherits("audio/x-aiff")) {
+        TagLib::RIFF::AIFF::FileExt file(QFile::encodeName(path));
+        return parseID3v2Tag(file, img);
+    }
+    if (type.inherits("audio/x-wav")) {
+        TagLib::RIFF::WAV::File file(QFile::encodeName(path));
+        return parseID3v2Tag(file, img);
     }
     return false;
 }
