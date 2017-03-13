@@ -1,4 +1,4 @@
-# Audio-thumbs
+# Audio-thumbs (will be part of kio-extras 17.04)
 Preview of embed album art in audio file for Dolphin 5
 
 ## Requirements
@@ -31,6 +31,11 @@ cmake .. \
 make
 sudo make install
 Configure Dolphin - General - Preview - Audio files
+```
 
+## Uninstall (only when you installed from here)
+```
+sudo make uninstall
+```
 
 Special thanks to Vytautas Mickus who made Dolphin 4 version.
