@@ -10,6 +10,8 @@ Preview of embed album art in audio file for Dolphin 5
 ### More Specifically for Ubuntu 16.04 Xenial
 ```
 sudo apt-get install g++ cmake extra-cmake-modules qtbase5-dev kio-dev libtag1-dev
+sudo add-apt-repository ppa:forkotov02/ppa
+sudo apt-get update && sudo apt upgrade // for taglib 1.11
 ```
 
 ### More Specifically for OpenSuse
